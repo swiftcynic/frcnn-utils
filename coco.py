@@ -287,8 +287,6 @@ class COCOConverter:
                 if not img_file.lower().endswith(('.png', '.jpg', '.jpeg')):
                     continue
 
-                image_name = '-'.join(img_file.split('-')[:-1])
-
                 # Find corresponding label file
                 label_file = img_file \
                     .replace('.jpg', '.txt') \
@@ -303,7 +301,7 @@ class COCOConverter:
                 
                 # Skip images with empty label files
                 if os.path.getsize(label_path) == 0:
-                    print(f"Warning: Empty label file for image {image_name}, skipping image.")
+                    print(f"Warning: Empty label file for image {img_file}, skipping image.")
                     continue
 
                 # Process annotations from YOLO format
@@ -331,8 +329,8 @@ class COCOConverter:
                         if width <= 0 or height <= 0:
                             width = max(1, width)
                             height = max(1, height)
-                            print(f"Warning: Non-positive area for annotation in image {image_name}(). Adjusting width/height to minimum 1 pixel.")
-                        
+                            print(f"Warning: Non-positive area for annotation in image {img_file}. Adjusting width/height to minimum 1 pixel.")
+
                         # Create annotation entry
                         annotation_info = {
                             "id": ann_id,
