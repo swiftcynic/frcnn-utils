@@ -41,6 +41,7 @@ def _synchronize_device(device):
             torch.mps.synchronize()
     except (RuntimeError, AttributeError):
         # If synchronization fails, continue without it
+        print(f"Warning: Device synchronization failed or is not supported on {device}.")
         pass
 
 def train(model, optimizer, train_loader, valid_loader, device=None, num_epochs=10, print_freq=250, scaler=None, output_dir=None, lr_scheduler=None):
