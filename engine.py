@@ -17,7 +17,7 @@ def train(model, optimizer, train_loader, valid_loader, device, num_epochs, prin
         if output_dir:
             torch.save(model.state_dict(), f'{output_dir}/model_epoch_{epoch}.pth')
 
-def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq=250, scaler=None):
+def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq=250, lr_scheduler=None, scaler=None):
     model.train()
     metric_logger = MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
