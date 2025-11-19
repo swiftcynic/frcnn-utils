@@ -10,7 +10,7 @@ from .req_utils import reduce_dict
 from .coco_eval import CocoEvaluator
 from .coco_utils import get_coco_api_from_dataset
 
-def train(model, optimizer, train_loader, valid_loader, device, num_epochs, print_freq=250, scaler=None, output_dir=None):
+def train(model, optimizer, train_loader, valid_loader, device, num_epochs, print_freq=250, scaler=None, output_dir=None, lr_scheduler=None):
     for epoch in range(1, num_epochs+1):
         train_one_epoch(model, optimizer, train_loader, device, epoch, print_freq, scaler)
         evaluate(model, valid_loader, device=device)
@@ -23,8 +23,8 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq=250
     metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
     header = f"Epoch: [{epoch}]"
 
-    lr_scheduler = None
-    if epoch == 0:
+    lr_scheduler = lr_scheduler
+    if epoch == 1:
         warmup_factor = 1.0 / 1000
         warmup_iters = min(1000, len(data_loader) - 1)
 
