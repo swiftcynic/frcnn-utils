@@ -9,15 +9,66 @@ from .req_utils import MetricLogger, SmoothedValue
 from .req_utils import reduce_dict
 from .coco_eval import CocoEvaluator
 from .coco_utils import get_coco_api_from_dataset
+from .device_check import check_set_gpu
 
-def train(model, optimizer, train_loader, valid_loader, device, num_epochs, print_freq=250, scaler=None, output_dir=None, lr_scheduler=None):
+# Note: MPS (Metal Performance Shaders) support considerations:
+# - torch.amp.autocast currently only supports 'cuda' and 'cpu' devices
+# - MPS operations fall back to CPU autocast for mixed precision training
+# - Some operations might not be fully optimized for MPS and may fall back to CPU
+
+
+def _get_autocast_device(device):
+    """
+    Get the appropriate device string for torch.amp.autocast based on the device type.
+    Currently, torch.amp.autocast only supports 'cuda' and 'cpu'.
+    MPS operations will fall back to CPU autocast.
+    """
+    if device.type == 'cuda':
+        return 'cuda'
+    else:
+        # For MPS and other devices, fall back to CPU autocast
+        return 'cpu'
+
+
+def _synchronize_device(device):
+    """
+    Synchronize the appropriate device based on its type.
+    """
+    try:
+        if device.type == 'cuda':
+            torch.cuda.synchronize()
+        elif device.type == 'mps':
+            torch.mps.synchronize()
+    except (RuntimeError, AttributeError):
+        # If synchronization fails, continue without it
+        pass
+
+def train(model, optimizer, train_loader, valid_loader, device=None, num_epochs=10, print_freq=250, scaler=None, output_dir=None, lr_scheduler=None):
+    """
+    Train a model for object detection.
+    
+    Args:
+        device: torch.device or None. If None, automatically detects best available device.
+    """
+    if device is None:
+        device = check_set_gpu()
+        
     for epoch in range(1, num_epochs+1):
         train_one_epoch(model, optimizer, train_loader, device, epoch, print_freq, scaler)
         evaluate(model, valid_loader, device=device)
         if output_dir:
             torch.save(model.state_dict(), f'{output_dir}/model_epoch_{epoch}.pth')
 
-def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq=250, lr_scheduler=None, scaler=None):
+def train_one_epoch(model, optimizer, data_loader, device=None, epoch=1, print_freq=250, lr_scheduler=None, scaler=None):
+    """
+    Train the model for one epoch.
+    
+    Args:
+        device: torch.device or None. If None, automatically detects best available device.
+    """
+    if device is None:
+        device = check_set_gpu()
+        
     model.train()
     metric_logger = MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
@@ -35,7 +86,10 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq=250
     for images, targets in metric_logger.log_every(data_loader, print_freq, header):
         images = list(image.to(device) for image in images)
         targets = [{'boxes': t['boxes'].to(device), 'labels': t['labels'].to(device)} for t in targets]
-        with torch.amp.autocast('cuda', enabled=scaler is not None):
+        
+        # Use helper function to get appropriate autocast device
+        autocast_device = _get_autocast_device(device)
+        with torch.amp.autocast(autocast_device, enabled=scaler is not None):
             loss_dict = model(images, targets)
             losses = sum(loss for loss in loss_dict.values())
 
@@ -81,7 +135,16 @@ def _get_iou_types(model):
 
 
 @torch.inference_mode()
-def evaluate(model, data_loader, device):
+def evaluate(model, data_loader, device=None):
+    """
+    Evaluate the model.
+    
+    Args:
+        device: torch.device or None. If None, automatically detects best available device.
+    """
+    if device is None:
+        device = check_set_gpu()
+        
     n_threads = torch.get_num_threads()
     # FIXME remove this and make paste_masks_in_image run on the GPU
     torch.set_num_threads(1)
@@ -97,8 +160,9 @@ def evaluate(model, data_loader, device):
     for images, targets in metric_logger.log_every(data_loader, 100, header):
         images = list(img.to(device) for img in images)
 
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
+        # Synchronize device before timing
+        _synchronize_device(device)
+        
         model_time = time.time()
         outputs = model(images)
 

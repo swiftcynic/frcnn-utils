@@ -6,6 +6,34 @@ from collections import defaultdict, deque
 
 import torch
 import torch.distributed as dist
+from .device_check import check_set_gpu
+
+
+def _get_device_for_distributed():
+    """Get the appropriate device for distributed operations."""
+    if torch.cuda.is_available():
+        return torch.device('cuda')
+    elif torch.backends.mps.is_available():
+        return torch.device('mps')
+    else:
+        return torch.device('cpu')
+
+
+def _get_memory_usage():
+    """Get memory usage for the current device."""
+    if torch.cuda.is_available():
+        return torch.cuda.max_memory_allocated()
+    elif torch.backends.mps.is_available():
+        # MPS doesn't have a direct equivalent to max_memory_allocated
+        # Return 0 as a placeholder
+        return 0
+    else:
+        return 0
+
+
+def _has_gpu_memory_tracking():
+    """Check if current device supports memory tracking for logging."""
+    return torch.cuda.is_available()
 
 
 class SmoothedValue:
@@ -32,7 +60,8 @@ class SmoothedValue:
         """
         if not is_dist_avail_and_initialized():
             return
-        t = torch.tensor([self.count, self.total], dtype=torch.float64, device="cuda")
+        device = _get_device_for_distributed()
+        t = torch.tensor([self.count, self.total], dtype=torch.float64, device=device)
         dist.barrier()
         dist.all_reduce(t)
         t = t.tolist()
@@ -151,7 +180,10 @@ class MetricLogger:
         iter_time = SmoothedValue(fmt="{avg:.4f}")
         data_time = SmoothedValue(fmt="{avg:.4f}")
         space_fmt = ":" + str(len(str(len(iterable)))) + "d"
-        if torch.cuda.is_available():
+        
+        # Use device-agnostic memory tracking
+        has_gpu_memory = _has_gpu_memory_tracking()
+        if has_gpu_memory:
             log_msg = self.delimiter.join(
                 [
                     header,
@@ -175,7 +207,7 @@ class MetricLogger:
             if i % print_freq == 0 or i == len(iterable) - 1:
                 eta_seconds = iter_time.global_avg * (len(iterable) - i)
                 eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
-                if torch.cuda.is_available():
+                if has_gpu_memory:
                     print(
                         log_msg.format(
                             i,
@@ -184,7 +216,7 @@ class MetricLogger:
                             meters=str(self),
                             time=str(iter_time),
                             data=str(data_time),
-                            memory=torch.cuda.max_memory_allocated() / MB,
+                            memory=_get_memory_usage() / MB,
                         )
                     )
                 else:
@@ -264,7 +296,11 @@ def init_distributed_mode(args):
         args.gpu = int(os.environ["LOCAL_RANK"])
     elif "SLURM_PROCID" in os.environ:
         args.rank = int(os.environ["SLURM_PROCID"])
-        args.gpu = args.rank % torch.cuda.device_count()
+        if torch.cuda.is_available():
+            args.gpu = args.rank % torch.cuda.device_count()
+        else:
+            # For MPS or CPU, set gpu to 0 as there's typically only one device
+            args.gpu = 0
     else:
         print("Not using distributed mode")
         args.distributed = False
@@ -272,8 +308,16 @@ def init_distributed_mode(args):
 
     args.distributed = True
 
-    torch.cuda.set_device(args.gpu)
-    args.dist_backend = "nccl"
+    # Set device based on availability
+    if torch.cuda.is_available():
+        torch.cuda.set_device(args.gpu)
+        args.dist_backend = "nccl"
+    else:
+        # MPS doesn't support distributed training with NCCL
+        # Fall back to Gloo backend for CPU/MPS
+        args.dist_backend = "gloo"
+        print("Warning: Using Gloo backend for distributed training. Performance may be reduced.")
+    
     print(f"| distributed init (rank {args.rank}): {args.dist_url}", flush=True)
     torch.distributed.init_process_group(
         backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size, rank=args.rank
