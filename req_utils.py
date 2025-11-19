@@ -143,7 +143,7 @@ class MetricLogger:
         self.meters[name] = meter
 
     def log_every(self, iterable, print_freq, header=None):
-        i = 0
+        i = 1
         if not header:
             header = ""
         start_time = time.time()
