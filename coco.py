@@ -22,6 +22,7 @@ Date: November 2025
 import os
 import json
 from datetime import date
+import random
 from typing import Dict, Tuple, Optional, Any
 
 import torch
@@ -192,7 +193,8 @@ class COCOConverter:
         output_path: str,
         image_size: Tuple[int, int] = IMAGE_SIZE,
         image_resize_factor: float = IMAGE_RESIZE_FACTOR,
-        keep_one_bbox_per_image: bool = False
+        keep_one_bbox_per_image: bool = False,
+        keep_ratio: Optional[float] = 1.0,
     ):
         """
         Initialize the COCO converter.
@@ -202,12 +204,17 @@ class COCOConverter:
             output_path (str): Path where COCO annotation files will be saved
             image_size (tuple, optional): Original image dimensions (width, height)
             image_resize_factor (float, optional): Factor to resize images
+            keep_one_bbox_per_image (bool, optional): If True, keeps only one bounding box per image
+            keep_ratio (float, optional): Number of images to keep from the dataset
         """
         self.dataset_dir_path = dataset_path
         self.output_path = os.path.join(output_path, 'coco_annotations')
         self.image_size = image_size
         self.image_resize_factor = image_resize_factor
         self.keep_one_bbox_per_image = keep_one_bbox_per_image
+        if keep_ratio > 1.0 or keep_ratio <= 0.0:
+            raise ValueError("keep_ratio must be in the range (0.0, 1.0]")
+        self.keep_ratio = keep_ratio
 
     def convert_to_coco(self) -> None:
         """
@@ -280,7 +287,12 @@ class COCOConverter:
             # Helper function to apply resize factor
             image_resizer = lambda x: int(x * self.image_resize_factor)
 
+            
+
             images_folders = os.listdir(images_path)
+            keep_image_count = len(images_folders) * self.keep_ratio
+
+            images_folders = random.sample(images_folders, int(keep_image_count))
 
             for img_file in images_folders:
                 # Skip non-image files
