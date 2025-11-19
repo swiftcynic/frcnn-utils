@@ -293,6 +293,7 @@ class COCOConverter:
             keep_image_count = len(images_folders) * self.keep_ratio
 
             images_folders = random.sample(images_folders, int(keep_image_count))
+            print(f"[Constraints] Keeping {len(images_folders)}/{len(os.listdir(images_path))} based on keep_ratio={self.keep_ratio}")
 
             for img_file in images_folders:
                 # Skip non-image files
@@ -313,7 +314,7 @@ class COCOConverter:
                 
                 # Skip images with empty label files
                 if os.path.getsize(label_path) == 0:
-                    print(f"Warning: Empty label file for image {img_file}, skipping image.")
+                    print(f"[Warning] Empty label file for image {img_file}, skipping image.")
                     continue
 
                 # Process annotations from YOLO format
@@ -341,7 +342,7 @@ class COCOConverter:
                         if width <= 0 or height <= 0:
                             width = max(1, width)
                             height = max(1, height)
-                            print(f"Warning: Non-positive area for annotation in image {img_file}. Adjusting width/height to minimum 1 pixel.")
+                            print(f"[Warning] Non-positive area for annotation in image {img_file}. Adjusting width/height to minimum 1 pixel.")
 
                         # Create annotation entry
                         annotation_info = {
