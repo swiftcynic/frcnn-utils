@@ -3,19 +3,39 @@ import sys
 import time
 
 import torch
-import torchvision.models.detection.mask_rcnn
+import torchvision
 
 from .req_utils import MetricLogger, SmoothedValue
 from .req_utils import reduce_dict
 from .coco_eval import CocoEvaluator
 from .coco_utils import get_coco_api_from_dataset
-from .device_check import check_set_gpu
+from .constants import DEVICE
 
 # Note: MPS (Metal Performance Shaders) support considerations:
 # - torch.amp.autocast currently only supports 'cuda' and 'cpu' devices
 # - MPS operations fall back to CPU autocast for mixed precision training
 # - Some operations might not be fully optimized for MPS and may fall back to CPU
 
+def get_model(backbone, weights, train_dataset, predictor, device=DEVICE):
+    """
+    Create and return a Faster R-CNN model with a custom predictor head.
+    """
+    # Load a pre-trained Faster R-CNN model with ResNet50 backbone
+    model = backbone(
+        weights=weights
+    )
+
+    # Get the number of classes in the dataset
+    num_classes = len(train_dataset.coco.getCatIds()) + 1
+
+    # Get the number of input features for the classifier head
+    in_features = model.roi_heads.box_predictor.cls_score.in_features
+
+    # Replace the pre-trained head with a new one
+    model.roi_heads.box_predictor = predictor(in_features, num_classes)
+
+    # Move the model to the specified device (GPU or CPU)
+    model.to(device)
 
 def _get_autocast_device(device):
     """
@@ -44,15 +64,13 @@ def _synchronize_device(device):
         print(f"Warning: Device synchronization failed or is not supported on {device}.")
         pass
 
-def train(model, optimizer, train_loader, valid_loader, device=None, num_epochs=10, print_freq=250, scaler=None, output_dir=None, lr_scheduler=None):
+def train(model, optimizer, train_loader, valid_loader, device=DEVICE, num_epochs=10, print_freq=250, scaler=None, output_dir=None, lr_scheduler=None):
     """
     Train a model for object detection.
     
     Args:
         device: torch.device or None. If None, automatically detects best available device.
     """
-    if device is None:
-        device = check_set_gpu()
         
     for epoch in range(1, num_epochs+1):
         train_one_epoch(model, optimizer, train_loader, device, epoch, print_freq, scaler)
@@ -60,15 +78,13 @@ def train(model, optimizer, train_loader, valid_loader, device=None, num_epochs=
         if output_dir:
             torch.save(model.state_dict(), f'{output_dir}/model_epoch_{epoch}.pth')
 
-def train_one_epoch(model, optimizer, data_loader, device=None, epoch=1, print_freq=250, lr_scheduler=None, scaler=None):
+def train_one_epoch(model, optimizer, data_loader, device=DEVICE, epoch=1, print_freq=250, lr_scheduler=None, scaler=None):
     """
     Train the model for one epoch.
     
     Args:
         device: torch.device or None. If None, automatically detects best available device.
     """
-    if device is None:
-        device = check_set_gpu()
         
     model.train()
     metric_logger = MetricLogger(delimiter="  ")
@@ -136,15 +152,13 @@ def _get_iou_types(model):
 
 
 @torch.inference_mode()
-def evaluate(model, data_loader, device=None):
+def evaluate(model, data_loader, device=DEVICE):
     """
     Evaluate the model.
     
     Args:
         device: torch.device or None. If None, automatically detects best available device.
     """
-    if device is None:
-        device = check_set_gpu()
         
     n_threads = torch.get_num_threads()
     # FIXME remove this and make paste_masks_in_image run on the GPU
@@ -186,3 +200,45 @@ def evaluate(model, data_loader, device=None):
     coco_evaluator.summarize()
     torch.set_num_threads(n_threads)
     return coco_evaluator
+
+def get_predictions(model, images, threshold=0.75):
+    threshold = 0.75
+
+    output_dict = model(images)
+
+    predictions = []
+
+    for output in output_dict:
+        scores = output['scores']
+        labels = output['labels']
+        boxes = output['boxes']
+
+        confident_predictions = {
+            'boxes': [],
+            'labels': [],
+            'scores': []
+        }
+
+        for i in range(len(scores)):
+            if scores[i] <= threshold:
+                continue
+            confident_predictions['boxes'].append(boxes[i])
+            confident_predictions['labels'].append(labels[i])
+            confident_predictions['scores'].append(scores[i])
+
+        
+        if len(confident_predictions['boxes']) == 0:
+            if len(scores) != 0:
+                confident_predictions = {
+                    'boxes': [boxes[0]],
+                    'labels': [labels[0]],
+                    'scores': [scores[0]]
+                }
+            else:
+                confident_predictions = {
+                    'boxes': [],
+                    'labels': [],
+                    'scores': []
+                }
+        predictions.append(confident_predictions)
+    return (predictions)
