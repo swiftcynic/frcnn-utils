@@ -208,7 +208,7 @@ def _synchronize_device(device):
 def train(
     model,
     optimizer,
-    data_loader,
+    train_loader,
     valid_loader,
     device=DEVICE,
     num_epochs=10,
@@ -291,7 +291,7 @@ def train(
 def train_one_epoch(
     model,
     optimizer,
-    data_loader,
+    train_loader,
     device=DEVICE,
     epoch=1,
     print_freq=250,
