@@ -45,10 +45,48 @@ import os
 
 import torch
 import torch.utils.data
+from torch.utils.data import DataLoader
 import torchvision
 from torchvision import transforms as T
 from pycocotools import mask as coco_mask
 from pycocotools.coco import COCO
+
+from .req_utils import collate_fn
+from .coco import COCODetectionDataset
+
+
+def get_data_loaders(image_dir, annotation_path, transforms, batch_size, shuffle=True, collate_fn=collate_fn):
+    """
+    Create a DataLoader for the given dataset.
+
+    This function initializes a PyTorch DataLoader for the specified dataset,
+    applying the provided transformations and batching configurations.
+
+    Args:
+        image_dir (str): Directory containing the images
+        annotation_path (str): Path to the COCO annotation file
+        transform (callable): Transformations to apply to the data
+        batch_size (int): Number of samples per batch
+        shuffle (bool, optional): Whether to shuffle the data. Defaults to True.
+        collate_fn (callable, optional): Custom collate function for batching. Defaults to None.
+
+    Returns:
+        DataLoader: PyTorch DataLoader object
+    """
+    dataset = COCODetectionDataset(
+        image_dir=image_dir,
+        annotation_path=annotation_path,
+        transforms=transforms
+    )
+
+    data_loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        collate_fn=collate_fn
+    )
+
+    return data_loader
 
 
 def convert_coco_poly_to_mask(segmentations, height, width):
