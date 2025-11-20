@@ -1,3 +1,46 @@
+"""
+COCO Dataset Utilities and Data Processing
+
+This module provides comprehensive utilities for processing COCO-formatted datasets,
+including polygon-to-mask conversion, data transformations, and dataset creation.
+It contains helper functions and classes for working with COCO annotations in
+PyTorch-based object detection workflows.
+
+The module includes:
+- Polygon-to-mask conversion utilities for segmentation tasks
+- COCO dataset transformation classes for PyTorch compatibility
+- Dataset creation and filtering functions
+- API conversion utilities for COCO format compliance
+
+Key Features:
+    - Convert COCO polygon annotations to binary masks
+    - Filter and validate COCO annotations 
+    - Transform datasets for PyTorch training pipelines
+    - Handle various annotation formats (bbox, segmentation, keypoints)
+    - Remove invalid or empty annotations automatically
+
+Classes:
+    ConvertCocoPolysToMask: Transforms COCO polygon annotations to masks
+    CocoDetection: Custom COCO detection dataset for PyTorch
+
+Functions:
+    convert_coco_poly_to_mask: Convert polygon annotations to binary masks
+    convert_to_coco_api: Convert dataset to COCO API format
+    get_coco_api_from_dataset: Extract COCO API from PyTorch dataset
+    get_coco: Create COCO dataset with specified configurations
+    _coco_remove_images_without_annotations: Filter out empty annotations
+
+Dependencies:
+    - torch: For tensor operations and dataset handling
+    - torchvision: For vision-specific transformations and datasets
+    - pycocotools: For COCO API operations and mask utilities
+    - os: For file system operations
+
+Author: Dhruv Salot  
+Date: November 2025
+License: MIT
+"""
+
 import os
 
 import torch
@@ -9,6 +52,34 @@ from pycocotools.coco import COCO
 
 
 def convert_coco_poly_to_mask(segmentations, height, width):
+    """
+    Convert COCO polygon segmentations to binary masks.
+    
+    This function takes polygon segmentations in COCO format and converts them
+    to binary masks. It handles multiple polygons per annotation and ensures
+    proper tensor formatting for PyTorch workflows.
+    
+    Args:
+        segmentations (list): List of polygon segmentations, where each segmentation
+                             is a list of polygons (each polygon is a flat list of coordinates)
+        height (int): Height of the target mask in pixels
+        width (int): Width of the target mask in pixels
+        
+    Returns:
+        torch.Tensor: Binary masks tensor of shape (N, height, width) where N is the
+                     number of annotations. Each mask contains 0s and 1s indicating
+                     background and foreground pixels respectively.
+                     
+    Note:
+        - If no valid masks are found, returns a zero tensor of shape (0, height, width)
+        - Multiple polygons for the same annotation are combined using logical OR
+        - Uses pycocotools for efficient polygon-to-mask conversion
+        
+    Example:
+        >>> segmentations = [[[x1, y1, x2, y2, ...]], [[x3, y3, x4, y4, ...]]]
+        >>> masks = convert_coco_poly_to_mask(segmentations, 480, 640)
+        >>> print(masks.shape)  # torch.Size([2, 480, 640])
+    """
     masks = []
     for polygons in segmentations:
         rles = coco_mask.frPyObjects(polygons, height, width)
@@ -26,7 +97,55 @@ def convert_coco_poly_to_mask(segmentations, height, width):
 
 
 class ConvertCocoPolysToMask:
+    """
+    Transform class to convert COCO polygon annotations to masks and process targets.
+    
+    This callable class processes COCO-style annotations and converts them into a format
+    suitable for PyTorch object detection models. It handles bounding box validation,
+    polygon-to-mask conversion, and target dictionary creation.
+    
+    The transformation performs several operations:
+    - Filters out crowd annotations (iscrowd=1)
+    - Validates and clamps bounding boxes to image boundaries  
+    - Converts polygon segmentations to binary masks
+    - Creates properly formatted target dictionaries
+    
+    Attributes:
+        None (stateless transform)
+        
+    Returns:
+        tuple: (image, target) where target contains:
+            - boxes (torch.Tensor): Bounding boxes in [xmin, ymin, xmax, ymax] format
+            - labels (torch.Tensor): Class labels for each annotation
+            - masks (torch.Tensor): Binary segmentation masks
+            - image_id (int): Unique identifier for the image
+            - area (torch.Tensor): Area of each annotation
+            - iscrowd (torch.Tensor): Crowd flag for each annotation
+            - keypoints (torch.Tensor, optional): Keypoint annotations if present
+            
+    Example:
+        >>> transform = ConvertCocoPolysToMask()
+        >>> image, target = transform(image, raw_target)
+        >>> print(target.keys())
+        dict_keys(['boxes', 'labels', 'masks', 'image_id', 'area', 'iscrowd'])
+        
+    Note:
+        - Annotations with invalid bounding boxes (width/height <= 0) are filtered out
+        - Bounding boxes are converted from COCO format [x, y, w, h] to [xmin, ymin, xmax, ymax]
+        - All crowd annotations are automatically excluded from processing
+    """
+    
     def __call__(self, image, target):
+        """
+        Apply the transformation to an image and its target annotations.
+        
+        Args:
+            image (PIL.Image): Input image
+            target (dict): Raw COCO target containing image_id and annotations
+            
+        Returns:
+            tuple: Transformed (image, target) pair with processed annotations
+        """
         w, h = image.size
 
         image_id = target["image_id"]
@@ -81,6 +200,36 @@ class ConvertCocoPolysToMask:
 
 
 def _coco_remove_images_without_annotations(dataset, cat_list=None):
+    """
+    Remove images without valid annotations from a COCO dataset.
+    
+    This function filters out images that don't have valid annotations based on
+    several criteria including empty annotations, invalid bounding boxes, and
+    insufficient keypoints for keypoint detection tasks.
+    
+    Args:
+        dataset: COCO dataset object with .ids and .coco attributes
+        cat_list (list, optional): List of category IDs to filter by. If provided,
+                                  only annotations belonging to these categories are considered.
+                                  
+    Returns:
+        torch.utils.data.Subset: Filtered dataset containing only images with valid annotations
+        
+    Validation Criteria:
+        - Images with no annotations are removed
+        - Images where all bounding boxes have near-zero area are removed  
+        - For keypoint tasks: Images with fewer than min_keypoints_per_image visible keypoints are removed
+        - Crowd annotations (iscrowd=1) are ignored in validation
+        
+    Note:
+        - min_keypoints_per_image is set to 10 for keypoint detection tasks
+        - Bounding boxes with width or height <= 1 are considered invalid
+        - This function helps ensure training data quality by removing problematic samples
+        
+    Example:
+        >>> filtered_dataset = _coco_remove_images_without_annotations(train_dataset)
+        >>> print(f"Filtered from {len(train_dataset)} to {len(filtered_dataset)} images")
+    """
     def _has_only_empty_bbox(anno):
         return all(any(o <= 1 for o in obj["bbox"][2:]) for obj in anno)
 
@@ -120,6 +269,41 @@ def _coco_remove_images_without_annotations(dataset, cat_list=None):
 
 
 def convert_to_coco_api(ds):
+    """
+    Convert a PyTorch dataset to COCO API format.
+    
+    This function takes a PyTorch dataset and converts it to a format compatible
+    with the COCO API. It processes all images and annotations to create a valid
+    COCO dataset structure that can be used with pycocotools.
+    
+    Args:
+        ds: PyTorch dataset that returns (image, target) tuples where target
+            contains COCO-style annotations
+            
+    Returns:
+        COCO: COCO API object with the converted dataset
+        
+    Dataset Structure Created:
+        - images: List of image metadata dictionaries
+        - categories: List of category definitions  
+        - annotations: List of annotation dictionaries
+        - info: Dataset information metadata
+        
+    Supported Annotation Types:
+        - Bounding boxes (required)
+        - Segmentation masks (optional)
+        - Keypoints (optional)
+        
+    Note:
+        - Annotation IDs start at 1 (COCO requirement)
+        - Bounding boxes are converted from [xmin, ymin, xmax, ymax] to [x, y, width, height] format
+        - Segmentation masks are encoded using COCO mask utilities
+        - Categories are automatically detected from the dataset labels
+        
+    Example:
+        >>> coco_api = convert_to_coco_api(pytorch_dataset)
+        >>> print(f"Converted dataset with {len(coco_api.getImgIds())} images")
+    """
     coco_ds = COCO()
     # annotation IDs need to start at 1, not 0, see torchvision issue #1530
     ann_id = 1
@@ -172,6 +356,34 @@ def convert_to_coco_api(ds):
 
 
 def get_coco_api_from_dataset(dataset):
+    """
+    Extract or create a COCO API object from a PyTorch dataset.
+    
+    This function attempts to extract a COCO API object from various types of
+    PyTorch datasets. If the dataset is already a COCO dataset, it returns the
+    existing COCO API. Otherwise, it converts the dataset to COCO format.
+    
+    Args:
+        dataset: PyTorch dataset object (CocoDetection, Subset, or custom dataset)
+        
+    Returns:
+        COCO: COCO API object for accessing dataset annotations
+        
+    Supported Dataset Types:
+        - torchvision.datasets.CocoDetection: Returns existing .coco attribute
+        - torch.utils.data.Subset: Recursively unwraps to find underlying dataset
+        - Custom datasets: Converts using convert_to_coco_api()
+        
+    Note:
+        - The function attempts up to 10 levels of dataset unwrapping for Subset datasets
+        - This is useful for evaluation and analysis tasks that require COCO API access
+        - The returned COCO object can be used with pycocotools for evaluation
+        
+    Example:
+        >>> coco_api = get_coco_api_from_dataset(train_loader.dataset)
+        >>> num_categories = len(coco_api.getCatIds())
+        >>> print(f"Dataset has {num_categories} categories")
+    """
     # FIXME: This is... awful?
     for _ in range(10):
         if isinstance(dataset, torchvision.datasets.CocoDetection):
@@ -184,11 +396,58 @@ def get_coco_api_from_dataset(dataset):
 
 
 class CocoDetection(torchvision.datasets.CocoDetection):
+    """
+    Extended COCO detection dataset with transform support.
+    
+    This class extends the standard torchvision COCO detection dataset to provide
+    better integration with custom transforms and preprocessing pipelines. It maintains
+    compatibility with the base CocoDetection while adding support for more complex
+    transformation workflows.
+    
+    Args:
+        img_folder (str): Path to the directory containing images
+        ann_file (str): Path to the COCO annotation JSON file  
+        transforms (callable, optional): Transform to be applied to (image, target) pairs
+        
+    Attributes:
+        _transforms (callable): The transformation function to apply
+        
+    Note:
+        - Unlike the base class, transforms are applied to both image and target
+        - The target dictionary includes image_id and annotations for transform compatibility
+        - This class is designed to work with transforms that expect (image, target) tuples
+        
+    Example:
+        >>> dataset = CocoDetection(
+        ...     img_folder="/path/to/images",
+        ...     ann_file="/path/to/annotations.json", 
+        ...     transforms=custom_transform
+        ... )
+        >>> image, target = dataset[0]
+    """
+    
     def __init__(self, img_folder, ann_file, transforms):
+        """
+        Initialize the extended COCO detection dataset.
+        
+        Args:
+            img_folder (str): Directory containing images
+            ann_file (str): COCO annotation file path
+            transforms (callable): Transform function for (image, target) pairs
+        """
         super().__init__(img_folder, ann_file)
         self._transforms = transforms
 
     def __getitem__(self, idx):
+        """
+        Get an item from the dataset with transforms applied.
+        
+        Args:
+            idx (int): Index of the item to retrieve
+            
+        Returns:
+            tuple: (image, target) pair after applying transforms
+        """
         img, target = super().__getitem__(idx)
         image_id = self.ids[idx]
         target = dict(image_id=image_id, annotations=target)
@@ -198,6 +457,48 @@ class CocoDetection(torchvision.datasets.CocoDetection):
 
 
 def get_coco(root, image_set, transforms, mode="instances", use_v2=False, with_masks=False):
+    """
+    Create a COCO dataset with specified configuration.
+    
+    This function creates a COCO dataset instance with the specified parameters,
+    handling both v1 and v2 transform APIs. It automatically applies appropriate
+    transforms and filters out images without valid annotations for training sets.
+    
+    Args:
+        root (str): Root directory containing COCO dataset
+        image_set (str): Dataset split to load ("train" or "val")
+        transforms (callable): Transform to apply to the dataset
+        mode (str, optional): Annotation mode ("instances", "captions", etc.). Defaults to "instances"
+        use_v2 (bool, optional): Whether to use torchvision v2 transforms. Defaults to False
+        with_masks (bool, optional): Whether to include segmentation masks. Defaults to False
+        
+    Returns:
+        Dataset: Configured COCO dataset ready for training or evaluation
+        
+    Dataset Structure:
+        - Images are loaded from {root}/{split}2017/ directories
+        - Annotations are loaded from {root}/annotations/{mode}_{split}2017.json files
+        
+    Features:
+        - Automatic annotation filtering for training sets
+        - Support for both v1 and v2 transform APIs
+        - Optional mask inclusion for segmentation tasks
+        - Proper target key configuration for v2 transforms
+        
+    Note:
+        - Training sets automatically remove images without valid annotations
+        - Validation sets keep all images for proper evaluation
+        - The function handles the complexity of transform API differences
+        
+    Example:
+        >>> train_dataset = get_coco(
+        ...     root="/path/to/coco",
+        ...     image_set="train", 
+        ...     transforms=train_transforms,
+        ...     with_masks=True
+        ... )
+        >>> print(f"Training dataset has {len(train_dataset)} images")
+    """
     anno_file_template = "{}_{}2017.json"
     PATHS = {
         "train": ("train2017", os.path.join("annotations", anno_file_template.format(mode, "train"))),
