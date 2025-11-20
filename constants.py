@@ -32,12 +32,10 @@ Constants Exported:
     MOMENTUM: Momentum for SGD optimizer
     WEIGHT_DECAY: Weight decay for regularization
     NUM_EPOCHS: Number of training epochs
-    OPTIMIZER_TYPE: Optimizer class to use
     DEVICE: Automatically detected compute device
 
 Dependencies:
     - os: For path operations
-    - torch.optim: For optimizer definitions
     - device_check: For automatic device detection
 
 Author: Dhruv Salot
@@ -51,7 +49,6 @@ Usage:
 """
 
 import os
-from torch.optim import SGD
 from .device_check import check_set_gpu
 
 # Defining constants
@@ -70,7 +67,6 @@ __all__ = [
     'MOMENTUM',
     'WEIGHT_DECAY',
     'NUM_EPOCHS',
-    'OPTIMIZER_TYPE',
     'DEVICE'
 ]
 
@@ -130,9 +126,6 @@ WEIGHT_DECAY = 5e-4
 
 # Total number of training epochs - sufficient for convergence on pest detection
 NUM_EPOCHS = 50
-
-# Optimizer class - SGD with momentum is proven effective for detection models
-OPTIMIZER_TYPE = SGD
 
 # Device Configuration
 # Automatically detect and configure the best available compute device
