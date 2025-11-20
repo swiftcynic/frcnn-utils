@@ -206,7 +206,18 @@ def _synchronize_device(device):
         pass
 
 
-def train(model, optimizer, train_loader, valid_loader, device=DEVICE, num_epochs=10, print_freq=250, scaler=None, output_dir=None, lr_scheduler=None):
+def train(
+    model,
+    optimizer,
+    train_loader,
+    valid_loader,
+    device=DEVICE,
+    num_epochs=10,
+    print_freq=250,
+    scaler=None,
+    output_dir=None,
+    lr_scheduler=None
+):
     """
     Complete training workflow for object detection models.
     
@@ -257,8 +268,17 @@ def train(model, optimizer, train_loader, valid_loader, device=DEVICE, num_epoch
     """
     for epoch in range(1, num_epochs+1):
         # Train for one epoch with detailed logging
-        train_one_epoch(model, optimizer, train_loader, device, epoch, print_freq, scaler)
-        
+        train_one_epoch(
+            model,
+            optimizer,
+            train_loader=train_loader,
+            device=device,
+            epoch=epoch,
+            print_freq=print_freq,
+            scaler=scaler,
+            lr_scheduler=lr_scheduler
+        )
+
         # Evaluate on validation set after each epoch
         evaluate(model, valid_loader, device=device)
         
@@ -269,7 +289,16 @@ def train(model, optimizer, train_loader, valid_loader, device=DEVICE, num_epoch
             print(f"Model checkpoint saved: {checkpoint_path}")
 
 
-def train_one_epoch(model, optimizer, data_loader, device=DEVICE, epoch=1, print_freq=250, lr_scheduler=None, scaler=None):
+def train_one_epoch(
+    model,
+    optimizer,
+    data_loader,
+    device=DEVICE,
+    epoch=1,
+    print_freq=250,
+    lr_scheduler=None,
+    scaler=None
+):
     """
     Train the model for one complete epoch with detailed logging and monitoring.
     
