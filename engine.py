@@ -362,13 +362,13 @@ def train_one_epoch(
     lr_scheduler = lr_scheduler
     if epoch == 1:
         warmup_factor = 1.0 / 1000
-        warmup_iters = min(1000, len(data_loader) - 1)
+        warmup_iters = min(1000, len(train_loader) - 1)
 
         lr_scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer, start_factor=warmup_factor, total_iters=warmup_iters
         )
 
-    for images, targets in metric_logger.log_every(data_loader, print_freq, header):
+    for images, targets in metric_logger.log_every(train_loader, print_freq, header):
         # Move data to the training device
         images = list(image.to(device) for image in images)
         targets = [{'boxes': t['boxes'].to(device), 'labels': t['labels'].to(device)} for t in targets]
