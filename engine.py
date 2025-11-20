@@ -55,6 +55,7 @@ import time
 
 import torch
 import torchvision
+from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 
 from .req_utils import MetricLogger, SmoothedValue
 from .req_utils import reduce_dict
@@ -68,7 +69,7 @@ from .constants import DEVICE
 # - Some PyTorch operations may not be fully optimized for MPS and fall back to CPU
 # - Memory tracking varies by platform and may not be available on all devices
 
-def get_model(backbone, weights, train_dataset, predictor, device=DEVICE):
+def get_model(backbone, weights, train_dataset, device=DEVICE):
     """
     Create and configure a Faster R-CNN model with a custom predictor head.
     
@@ -100,7 +101,6 @@ def get_model(backbone, weights, train_dataset, predictor, device=DEVICE):
         ...     backbone=fasterrcnn_resnet50_fpn,
         ...     weights=FasterRCNN_ResNet50_FPN_Weights.COCO_V1,
         ...     train_dataset=train_dataset,
-        ...     predictor=FastRCNNPredictor,
         ...     device=device
         ... )
         
@@ -119,7 +119,7 @@ def get_model(backbone, weights, train_dataset, predictor, device=DEVICE):
     in_features = model.roi_heads.box_predictor.cls_score.in_features
 
     # Replace the pre-trained classification head with a custom predictor
-    model.roi_heads.box_predictor = predictor(in_features, num_classes)
+    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
 
     # Move the model to the specified device (GPU or CPU)
     model.to(device)
