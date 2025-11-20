@@ -69,7 +69,7 @@ from .constants import DEVICE
 # - Some PyTorch operations may not be fully optimized for MPS and fall back to CPU
 # - Memory tracking varies by platform and may not be available on all devices
 
-def get_model(backbone, weights, train_dataset, num_classes, device=DEVICE):
+def get_model(backbone, weights, num_classes, device=DEVICE):
     """
     Create and configure a Faster R-CNN model with a custom predictor head.
     
@@ -80,8 +80,7 @@ def get_model(backbone, weights, train_dataset, num_classes, device=DEVICE):
     Args:
         backbone (callable): Faster R-CNN backbone constructor (e.g., torchvision.models.detection.fasterrcnn_resnet50_fpn)
         weights (str or torchvision.models.WeightsEnum): Pre-trained weights to load
-        train_dataset: Training dataset with COCO API for class information
-        predictor (callable): Custom predictor head constructor  
+        num_classes (int): Number of target classes (excluding background 
         device (torch.device, optional): Target device for the model. Defaults to DEVICE constant.
         
     Returns:
@@ -100,7 +99,7 @@ def get_model(backbone, weights, train_dataset, num_classes, device=DEVICE):
         >>> model = get_model(
         ...     backbone=fasterrcnn_resnet50_fpn,
         ...     weights=FasterRCNN_ResNet50_FPN_Weights.COCO_V1,
-        ...     train_dataset=train_dataset,
+        ...     num_classes=num_classes,
         ...     device=device
         ... )
         
