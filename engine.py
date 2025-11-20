@@ -69,7 +69,7 @@ from .constants import DEVICE
 # - Some PyTorch operations may not be fully optimized for MPS and fall back to CPU
 # - Memory tracking varies by platform and may not be available on all devices
 
-def get_model(backbone, weights, train_dataset, device=DEVICE):
+def get_model(backbone, weights, train_dataset, num_classes, device=DEVICE):
     """
     Create and configure a Faster R-CNN model with a custom predictor head.
     
@@ -113,7 +113,7 @@ def get_model(backbone, weights, train_dataset, device=DEVICE):
     model = backbone(weights=weights)
 
     # Get the number of classes in the dataset (including background)
-    num_classes = len(train_dataset.coco.getCatIds()) + 1
+    num_classes = num_classes + 1
 
     # Get the number of input features for the classifier head from the backbone
     in_features = model.roi_heads.box_predictor.cls_score.in_features
